@@ -16,6 +16,8 @@ secret. It does not store, resolve or authorize credentials; the host and
 - `src/credential-providers.ts` — `createHeaderCredentialProvider`, the three
   presets, their plugin keys and `MCP_NO_TOKEN_SENTINEL`.
 - `src/index.ts` — the only module consumers import from.
+- `e2e/` — providers registered in a real `@intx/harness` registry and
+  capability, against local servers.
 
 ## Rules
 
@@ -33,4 +35,5 @@ secret. It does not store, resolve or authorize credentials; the host and
 ```sh
 bun install
 bun run check
+bun run test:e2e
 ```

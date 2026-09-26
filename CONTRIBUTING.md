@@ -9,6 +9,8 @@ bun run check
 
 `bun run check` runs typecheck, lint, format check and unit tests. `bun run format` rewrites the tree.
 
+`bun run test:e2e` runs the end-to-end suite in `e2e/` against local servers; it needs no network or keys.
+
 Contributors sign the [CLA](CLA.md) on their first PR; the CLA bot explains how.
 
 ## Commit messages
