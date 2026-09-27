@@ -1,6 +1,6 @@
 {
   "name": "@corbits/credential-http",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Origin-pinned HTTP credential providers for Interchange: any header, x-api-key, raw Authorization, and MCP streamable HTTP.",
   "keywords": [
     "corbits",
