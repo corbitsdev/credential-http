@@ -1,11 +1,11 @@
 # @corbits/credential-http
 
-Credential providers that attach a secret to HTTP requests in any header: `x-api-key`, raw `authorization`, a custom prefix, or MCP streamable HTTP with a keyless mode. Each handle is pinned to the credential's origin and never follows a redirect. An auth and credentials package for Corbits that registers into the `@intx/harness` credential provider registry beside Interchange's built-in Bearer provider.
+Send a credential in any HTTP header, only to its own origin. Presets cover `x-api-key`, raw `authorization` and MCP streamable HTTP, and they register into the `@intx/harness` credential registry beside Interchange's built-in Bearer provider.
 
 ## Why @corbits/credential-http?
 
 1. **Every header shape, one factory.** Interchange's built-in `http` provider sends only `authorization: Bearer <secret>`. `createHeaderCredentialProvider` takes the header name and an optional prefix, and three presets cover the common cases.
-2. **The secret stays on its origin.** A handle refuses any request outside the credential's origin, re-reads the secret on every call so a rotation applies at once, and returns a 3xx to the caller unfollowed.
+2. **The secret stays on its origin.** A handle refuses any request outside the credential's origin, re-reads the secret on every call so a rotation applies at once, and never follows a redirect.
 3. **Keyless MCP servers.** A public MCP server rejects a bogus bearer but accepts no header. The MCP preset sends no `authorization` header when the stored secret is `MCP_NO_TOKEN_SENTINEL`.
 
 For plain Bearer APIs, use the built-in `http` provider from `@intx/harness`.
@@ -16,81 +16,72 @@ For plain Bearer APIs, use the built-in `http` provider from `@intx/harness`.
 bun add @corbits/credential-http @intx/harness@^0.4.0 @intx/types@^0.4.0
 ```
 
-Runs on Bun >= 1.2 or Node >= 24. The quickstart also uses `@intx/authz` for the grant.
+Runs on Bun >= 1.2 or Node >= 24.
 
 ## Quickstart
 
-Needs `EXA_API_KEY` set. The tool gets a handle that sends the key in `x-api-key` to `https://api.exa.ai` and nowhere else.
+Four steps: register the preset in your host, then create the provider, the credential and the grant through the Interchange hub. The example sends an API key in `x-api-key` to `https://api.example.com`.
+
+**1. Register the preset** where your host builds its credential registry.
 
 ```ts
-import { toolConsumer } from "@intx/authz";
 import {
   builtinCredentialProviders,
-  createCredentialCapability,
   createCredentialProviderRegistry,
 } from "@intx/harness";
 import { createXApiKeyCredentialProvider } from "@corbits/credential-http";
 
-const apiKey = process.env.EXA_API_KEY;
-if (apiKey === undefined) throw new Error("EXA_API_KEY is not set");
-
-const consumer = toolConsumer("@acme/search-tools");
-const credentials = createCredentialCapability({
-  consumer,
-  providers: createCredentialProviderRegistry([
-    ...builtinCredentialProviders(),
-    createXApiKeyCredentialProvider(),
-  ]),
-  bindings: new Map([
-    [
-      "exa",
-      {
-        credentialId: "cred_exa",
-        providerKey: "http-x-api-key",
-        origin: "https://api.exa.ai",
-        readCurrentMaterial: () => ({ secret: apiKey }),
-      },
-    ],
-  ]),
-  grants: [
-    {
-      id: "grt_exa",
-      origin: "system",
-      resource: "credential:cred_exa",
-      action: "use",
-      effect: "allow",
-      conditions: { tool: consumer },
-      expiresAt: null,
-      roleId: null,
-      principalId: null,
-    },
-  ],
-});
-
-const exa = await credentials.resolve("exa");
-const response = await exa.fetch("/search", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ query: "Interchange AI agents", numResults: 1 }),
-});
-console.log(response.status, await response.json());
+const providers = createCredentialProviderRegistry([
+  ...builtinCredentialProviders(),
+  createXApiKeyCredentialProvider(),
+]);
 ```
+
+**2. Create the provider.** `plugin` picks the preset; `apiBaseUrl` is the only origin the key is ever sent to.
+
+```sh
+curl -X POST "$HUB_URL/api/tenants/$TENANT_ID/providers" \
+  -H "authorization: Bearer $HUB_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"name": "example", "plugin": "http-x-api-key", "apiBaseUrl": "https://api.example.com"}'
+```
+
+**3. Store the key** under that provider, using the `id` from step 2.
+
+```sh
+curl -X POST "$HUB_URL/api/tenants/$TENANT_ID/credentials" \
+  -H "authorization: Bearer $HUB_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"providerId": "'"$PROVIDER_ID"'", "name": "example", "type": "api_key", "secret": "'"$API_KEY"'"}'
+```
+
+**4. Let the agent use it**, using the credential `id` from step 3.
+
+```sh
+curl -X POST "$HUB_URL/api/tenants/$TENANT_ID/grants" \
+  -H "authorization: Bearer $HUB_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"principalId": "'"$AGENT_PRINCIPAL_ID"'", "resource": "credential:'"$CREDENTIAL_ID"'", "action": "use", "effect": "allow", "origin": "system"}'
+```
+
+The agent's tools now get a handle that sends the key in `x-api-key` to `https://api.example.com` and refuses any other origin.
 
 ## Where it fits
 
-- **Interchange side:** any host that shapes tool credentials with `@intx/harness`: `createCredentialProviderRegistry` and `createCredentialCapability`.
-- **Seam:** the `CredentialProvider` plugin from `@intx/types`. A credential row's provider `plugin` column names the provider key that shapes its handles.
+- **Seam:** the `CredentialProvider` plugin from `@intx/types`. A provider's `plugin` field names the preset that shapes its credentials' handles.
 - **Pairs with:** [`@corbits/mcp`](https://github.com/corbitsdev/corbits-mcp), which uses the MCP preset for tool calls and `createOriginPinnedFetch` for hub-side discovery.
 
 ## Reference
 
 ### Presets
 
-| Factory                                            | Plugin key                                                  | Header sent                                                           |
-| -------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------- |
-| `createXApiKeyCredentialProvider(opts?)`           | `http-x-api-key` (`X_API_KEY_PROVIDER_KEY`)                 | `x-api-key: <secret>`                                                 |
-| `createRawAuthorizationCredentialProvider(opts?)`  | `http-raw-authorization` (`RAW_AUTHORIZATION_PROVIDER_KEY`) | `authorization: <secret>`                                             |
-| `createMcpStreamableHttpCredentialProvider(opts?)` | `mcp-streamable-http` (`MCP_STREAMABLE_HTTP_PROVIDER_KEY`)  | `authorization: Bearer <secret>`, or none for `MCP_NO_TOKEN_SENTINEL` |
+| Factory                                            | Plugin key               | Header sent                                                           |
+| -------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| `createXApiKeyCredentialProvider(opts?)`           | `http-x-api-key`         | `x-api-key: <secret>`                                                 |
+| `createRawAuthorizationCredentialProvider(opts?)`  | `http-raw-authorization` | `authorization: <secret>`                                             |
+| `createMcpStreamableHttpCredentialProvider(opts?)` | `mcp-streamable-http`    | `authorization: Bearer <secret>`, or none for `MCP_NO_TOKEN_SENTINEL` |
+
+The keys are also exported as `X_API_KEY_PROVIDER_KEY`, `RAW_AUTHORIZATION_PROVIDER_KEY` and `MCP_STREAMABLE_HTTP_PROVIDER_KEY`.
 
 `opts` is `CredentialPresetOptions`:
 
@@ -98,6 +89,8 @@ console.log(response.status, await response.json());
 | -------------- | ----------------------------------- | -------------- |
 | `extraOrigins` | `Record<string, readonly string[]>` | `{}`           |
 | `fetch`        | `FetchLike` from `@intx/harness`    | global `fetch` |
+
+`extraOrigins` is keyed by the pinned origin, so one credential's allowance never applies to another. `{ "https://mcp.example.com": ["https://auth.example.com"] }` lets only a credential pinned to `https://mcp.example.com` also call `https://auth.example.com`.
 
 ### `createHeaderCredentialProvider(opts)`
 
@@ -117,56 +110,26 @@ The pinned `fetch` every handle uses, for code that holds a secret outside the p
 
 ### `MCP_NO_TOKEN_SENTINEL`
 
-The secret to store for a keyless MCP server connection. Credential storage requires a non-empty secret; the MCP preset reads this value as "send no `authorization` header".
-
-## Security
-
-- **Origin pin.** A handle is pinned to `new URL(credential.origin).origin`. Relative paths resolve against it, and a request to any other origin throws before the secret is read.
-- **`extraOrigins`.** Extra origins are keyed by the pinned origin, so one credential's allowance never applies to another. For example, `{ "https://mcp.example.com": ["https://auth.example.com"] }` lets only a credential pinned to `https://mcp.example.com` call `https://auth.example.com`.
-- **`redirect: "manual"`.** Forced on every request. A 3xx comes back to the caller unfollowed, so a server cannot redirect the secret to another host.
+The secret to store for a keyless MCP server. Credential storage requires a non-empty secret; the MCP preset reads this value as "send no `authorization` header".
 
 ## Using with Interchange
 
-1. Register the providers you need next to the built-ins when you build the registry:
-
-   ```ts
-   const providers = createCredentialProviderRegistry([
-     ...builtinCredentialProviders(),
-     createXApiKeyCredentialProvider(),
-     createMcpStreamableHttpCredentialProvider({
-       extraOrigins: {
-         "https://mcp.example.com": ["https://auth.example.com"],
-       },
-     }),
-   ]);
-   ```
-
-2. Set the credential's provider row `plugin` column to the preset's key, for example `http-x-api-key`. Handles for that credential are then shaped by this package instead of the Bearer `http` provider.
-3. For a keyless MCP server, store `MCP_NO_TOKEN_SENTINEL` as the credential's secret and use `mcp-streamable-http` as the plugin.
-4. Grant the tool `credential:<id>` / `use`, as for any credential.
-
-The stock Interchange 0.4 sidecar builds its registry from `builtinCredentialProviders()` only, so these providers apply in hosts that build their own registry.
+- The stock Interchange 0.4 sidecar builds its registry from `builtinCredentialProviders()` only. These presets apply in hosts that build their own registry, as in step 1.
+- For a keyless MCP server, create the provider with `plugin: "mcp-streamable-http"` and store `MCP_NO_TOKEN_SENTINEL` as the credential's secret.
 
 ## Upgrading from @corbits/credential-header / credential-mcp
 
-`@corbits/credential-header` and `@corbits/credential-mcp` are merged into this package. Plugin keys, header shapes and the sentinel value are unchanged, so stored credential rows need no migration.
+Both packages are merged into this one. Plugin keys, header shapes and the sentinel are unchanged, so stored credentials need no migration. An empty secret now sends no header, where `credential-header` sent an empty one.
 
-Two behaviors change. An empty secret now sends no header from every preset; `credential-header` used to send an empty one. The cross-origin error now reads `credential is pinned to <origin>; refusing cross-origin request to <origin>`, without the provider key.
+| Before                                                              | After                                                                             |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `xApiKeyCredentialProvider`                                         | `createXApiKeyCredentialProvider`                                                 |
+| `rawAuthorizationCredentialProvider`                                | `createRawAuthorizationCredentialProvider`                                        |
+| `mcpOriginPinnedFetch({ pinnedOrigin, readToken, fetch? })`         | `createOriginPinnedFetch({ origin, header: "authorization", readValue, fetch? })` |
+| `HeaderPresetOptions`, `McpStreamableHttpCredentialProviderOptions` | `CredentialPresetOptions`                                                         |
+| Built-in cross-origin allowance for one MCP provider                | `extraOrigins`                                                                    |
 
-| Before                                                                                                                  | After                                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@corbits/credential-header`, `@corbits/credential-mcp`                                                                 | `@corbits/credential-http`                                                                                                                   |
-| `xApiKeyCredentialProvider(opts?)`                                                                                      | `createXApiKeyCredentialProvider(opts?)`                                                                                                     |
-| `rawAuthorizationCredentialProvider(opts?)`                                                                             | `createRawAuthorizationCredentialProvider(opts?)`                                                                                            |
-| `createHeaderCredentialProvider({ key, header, prefix?, fetch? })`                                                      | unchanged, plus `extraOrigins?`                                                                                                              |
-| `createMcpStreamableHttpCredentialProvider(opts?)`                                                                      | unchanged, plus `extraOrigins?`                                                                                                              |
-| `HeaderPresetOptions`, `McpStreamableHttpCredentialProviderOptions`                                                     | `CredentialPresetOptions`                                                                                                                    |
-| `X_API_KEY_PROVIDER_KEY`, `RAW_AUTHORIZATION_PROVIDER_KEY`, `MCP_STREAMABLE_HTTP_PROVIDER_KEY`, `MCP_NO_TOKEN_SENTINEL` | unchanged                                                                                                                                    |
-| `mcpOriginPinnedFetch({ pinnedOrigin, readToken, fetch? })`                                                             | `createOriginPinnedFetch({ origin, header: "authorization", readValue, fetch? })`, where `readValue` returns `Bearer <token>` or `undefined` |
-| `McpOriginPinnedFetchArgs`                                                                                              | `OriginPinnedFetchOptions`                                                                                                                   |
-| `FetchLike`                                                                                                             | import from `@intx/harness`                                                                                                                  |
-| `resolveMcpTargetUrl`, `assertMcpPinnedTarget`                                                                          | removed; `createOriginPinnedFetch` does both                                                                                                 |
-| Built-in provider-specific cross-origin allowance                                                                       | pass `extraOrigins: { "https://mcp.example.com": ["https://auth.example.com"] }`                                                             |
+`FetchLike` now comes from `@intx/harness`, and `resolveMcpTargetUrl` and `assertMcpPinnedTarget` are removed because `createOriginPinnedFetch` does both.
 
 ## License
 
