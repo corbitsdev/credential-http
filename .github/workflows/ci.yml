@@ -24,4 +24,4 @@ jobs:
           mkdir -p "$RUNNER_TEMP/c" && cd "$RUNNER_TEMP/c"
           npm init -y >/dev/null && npm pkg set type=module >/dev/null
           npm install "$TARBALL"
-          node -e 'import("@corbits/credential-http").then((m) => { for (const n of []) if (typeof m[n] !== "function") throw new Error("missing export: " + n); })'
+          node -e 'import("@corbits/credential-http").then((m) => { for (const n of ["createHeaderCredentialProvider", "createXApiKeyCredentialProvider", "createRawAuthorizationCredentialProvider", "createMcpStreamableHttpCredentialProvider", "createOriginPinnedFetch"]) if (typeof m[n] !== "function") throw new Error("missing export: " + n); })'
