@@ -106,7 +106,7 @@ createHeaderCredentialProvider({
 
 ### `createOriginPinnedFetch(opts)`
 
-The pinned `fetch` every handle uses, for code that holds a secret outside the provider registry, such as a hub route. `opts` is `{ origin, header, readValue, extraOrigins?, fetch? }`. `readValue` runs per request; `undefined` or `""` sends no header. `Request` and `RequestInit` follow fetch's override rules, except the credential header and `redirect: "manual"` always win. Passing a `Request` does not drop `init` (including its abort signal).
+The pinned `fetch` every handle uses, for code that holds a secret outside the provider registry, such as a hub route. `opts` is `{ origin, header, readValue, extraOrigins?, fetch? }`. `readValue` runs per request; `undefined` or `""` sends no header. `Request` and `RequestInit` follow fetch's override rules, except the credential header and `redirect: "manual"` always win. Passing a `Request` does not drop `init` (including its abort signal). The URL is copied to a string and authorized before headers are read or the credential is attached, and the delegate is called with that string rather than the original `URL` or `Request`. `blob:` and every protocol other than `https` (or `http` on loopback) is refused before the secret is read.
 
 ### `MCP_NO_TOKEN_SENTINEL`
 
