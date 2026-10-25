@@ -4,6 +4,7 @@
 // The protections are the same: every request is origin-checked before the
 // credential is attached, and `redirect: "manual"` is forced so a 3xx is
 // returned unfollowed rather than carrying the credential to another host.
+// Transport is https, except http on loopback for a same-machine dev server.
 
 import type { FetchLike } from "@intx/harness";
 
@@ -11,11 +12,35 @@ import type { FetchLike } from "@intx/harness";
 const HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const HEADER_VALUE = /^[\t\x20-\x7e\x80-\xff]*$/;
 
+// http is not a production credential transport. These hosts have no network
+// hop; anything else (including other loopback addresses) stays refused.
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+  "::1",
+]);
+
 /** Throw unless `name` is a valid HTTP header name. */
 export function assertHeaderName(name: string): void {
   if (!HEADER_NAME.test(name)) {
     throw new Error(`invalid credential header name: ${JSON.stringify(name)}`);
   }
+}
+
+/**
+ * Origin of `raw` when it is a credential transport we will send a secret to.
+ * https is required. http is accepted only for loopback.
+ */
+export function credentialTransportOrigin(raw: string): string {
+  const url = new URL(raw);
+  const loopback = url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname);
+  if (url.protocol !== "https:" && !loopback) {
+    throw new Error(
+      `credential transport ${url.origin} must be https (http is allowed only on loopback)`,
+    );
+  }
+  return url.origin;
 }
 
 export interface OriginPinnedFetchOptions {
@@ -32,6 +57,7 @@ export interface OriginPinnedFetchOptions {
   /**
    * Further origins a request may target, for a server whose protocol origin
    * differs from its stored URL. A redirect to one is still never followed.
+   * Each entry must be https, or http on loopback.
    */
   extraOrigins?: readonly string[];
   /** The `fetch` to delegate to. Defaults to the global `fetch`. */
@@ -41,15 +67,20 @@ export interface OriginPinnedFetchOptions {
 /**
  * Build a `fetch` that refuses any request outside the pinned origin (plus
  * `extraOrigins`), sets or strips `header`, and never follows a redirect.
+ * A `Request` plus `RequestInit` keeps fetch's override rules: init replaces
+ * request fields it sets, then the credential header and `redirect: "manual"`
+ * are forced.
  */
 export function createOriginPinnedFetch(
   opts: OriginPinnedFetchOptions,
 ): FetchLike {
   assertHeaderName(opts.header);
   const fetchImpl: FetchLike = opts.fetch ?? globalThis.fetch;
-  const pinnedOrigin = new URL(opts.origin).origin;
+  const pinnedOrigin = credentialTransportOrigin(opts.origin);
   const allowed = new Set(
-    (opts.extraOrigins ?? []).map((origin) => new URL(origin).origin),
+    (opts.extraOrigins ?? []).map((origin) =>
+      credentialTransportOrigin(origin),
+    ),
   );
   allowed.add(pinnedOrigin);
 
@@ -63,10 +94,17 @@ export function createOriginPinnedFetch(
         `credential is pinned to ${pinnedOrigin}; refusing cross-origin request to ${target.origin}`,
       );
     }
+    // Allowlist entries were checked at construction. Check the target again
+    // so a secret is never attached to a scheme that failed closed.
+    credentialTransportOrigin(target.origin);
 
     const value = opts.readValue();
     const headers = new Headers(
-      input instanceof Request ? input.headers : init?.headers,
+      init?.headers !== undefined
+        ? init.headers
+        : input instanceof Request
+          ? input.headers
+          : undefined,
     );
     if (value === undefined || value === "") {
       headers.delete(opts.header);
@@ -79,10 +117,13 @@ export function createOriginPinnedFetch(
       headers.set(opts.header, value);
     }
 
+    const nextInit: RequestInit = { ...init, headers, redirect: "manual" };
     if (input instanceof Request) {
-      return fetchImpl(new Request(input, { headers, redirect: "manual" }));
+      // Bake init into the Request so a delegate that only reads its first
+      // argument still sees the override, the credential, and the abort signal.
+      return fetchImpl(new Request(input, nextInit));
     }
-    return fetchImpl(target, { ...init, headers, redirect: "manual" });
+    return fetchImpl(target, nextInit);
   };
 }
 
