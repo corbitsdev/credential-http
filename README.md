@@ -13,10 +13,10 @@ For plain Bearer APIs, use the built-in `http` provider from `@intx/harness`.
 ## Install
 
 ```bash
-bun add @corbits/credential-http @intx/harness@^0.4.0 @intx/types@^0.4.0
+bun add @corbits/credential-http @intx/harness@^0.5.0 @intx/types@^0.5.0
 ```
 
-Runs on Bun >= 1.2 or Node >= 24.
+Runs on Bun >= 1.2 or Node >= 24. `@intx/harness` and `@intx/types` `^0.4.0` are also accepted peer ranges.
 
 ## Quickstart
 
@@ -90,7 +90,7 @@ The keys are also exported as `X_API_KEY_PROVIDER_KEY`, `RAW_AUTHORIZATION_PROVI
 | `extraOrigins` | `Record<string, readonly string[]>` | `{}`           |
 | `fetch`        | `FetchLike` from `@intx/harness`    | global `fetch` |
 
-`extraOrigins` is keyed by the pinned origin, so one credential's allowance never applies to another. `{ "https://mcp.example.com": ["https://auth.example.com"] }` lets only a credential pinned to `https://mcp.example.com` also call `https://auth.example.com`.
+`extraOrigins` is keyed by the pinned origin, so one credential's allowance never applies to another. `{ "https://mcp.example.com": ["https://auth.example.com"] }` lets only a credential pinned to `https://mcp.example.com` also call `https://auth.example.com`. Every origin a secret can be sent to, including these, must be `https`. `http` is accepted only for loopback (`localhost`, `127.0.0.1`, and `::1`). Anything else is refused before the secret is attached. A redirect is still never followed.
 
 ### `createHeaderCredentialProvider(opts)`
 
@@ -106,7 +106,7 @@ createHeaderCredentialProvider({
 
 ### `createOriginPinnedFetch(opts)`
 
-The pinned `fetch` every handle uses, for code that holds a secret outside the provider registry, such as a hub route. `opts` is `{ origin, header, readValue, extraOrigins?, fetch? }`. `readValue` runs per request; `undefined` or `""` sends no header.
+The pinned `fetch` every handle uses, for code that holds a secret outside the provider registry, such as a hub route. `opts` is `{ origin, header, readValue, extraOrigins?, fetch? }`. `readValue` runs per request; `undefined` or `""` sends no header. `Request` and `RequestInit` follow fetch's override rules, except the credential header and `redirect: "manual"` always win. Passing a `Request` does not drop `init` (including its abort signal). The URL is copied to a string and authorized before headers are read or the credential is attached, and the delegate is called with that string rather than the original `URL` or `Request`. `blob:` and every protocol other than `https` (or `http` on loopback) is refused before the secret is read.
 
 ### `MCP_NO_TOKEN_SENTINEL`
 

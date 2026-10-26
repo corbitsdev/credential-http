@@ -12,6 +12,7 @@ import type {
 import {
   assertHeaderName,
   createOriginPinnedFetch,
+  credentialTransportOrigin,
 } from "./origin-pinned-fetch.js";
 
 /** Plugin key of the `x-api-key` preset. */
@@ -113,8 +114,8 @@ function createPinnedProvider(
   const fetchImpl: FetchLike = opts.fetch ?? globalThis.fetch;
   const extraOrigins = new Map(
     Object.entries(opts.extraOrigins ?? {}).map(([origin, extras]) => [
-      new URL(origin).origin,
-      extras,
+      credentialTransportOrigin(origin),
+      extras.map((extra) => credentialTransportOrigin(extra)),
     ]),
   );
 

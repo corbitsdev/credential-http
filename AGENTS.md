@@ -27,7 +27,9 @@ secret. It does not store, resolve or authorize credentials; the host and
   header, host-supplied extra origins, and no header for an empty or keyless
   secret.
 - Extra origins are host-supplied and keyed by the pinned origin. No vendor
-  origin lives in source.
+  origin lives in source. A secret is sent only to `https`, or to `http` on
+  loopback (`localhost`, `127.0.0.1`, `::1`). Other schemes are refused before
+  the credential is attached.
 - `FetchLike` comes from `@intx/harness`; do not redeclare it.
 
 ## Local development
