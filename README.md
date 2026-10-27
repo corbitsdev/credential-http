@@ -52,7 +52,7 @@ curl -X POST "$HUB_URL/api/tenants/$TENANT_ID/providers" \
 curl -X POST "$HUB_URL/api/tenants/$TENANT_ID/credentials" \
   -H "authorization: Bearer $HUB_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"providerId": "'"$PROVIDER_ID"'", "name": "example", "type": "api_key", "secret": "'"$API_KEY"'"}'
+  -d "{\"providerId\":\"$PROVIDER_ID\",\"name\":\"example\",\"type\":\"api_key\",\"secret\":\"$API_KEY\"}"
 ```
 
 **4. Let the agent use it**, using the credential `id` from step 3.
@@ -69,7 +69,7 @@ The agent's tools now get a handle that sends the key in `x-api-key` to `https:/
 ## Where it fits
 
 - **Seam:** the `CredentialProvider` plugin from `@intx/types`. A provider's `plugin` field names the preset that shapes its credentials' handles.
-- **Pairs with:** [`@corbits/mcp`](https://github.com/corbitsdev/corbits-mcp), which uses the MCP preset for tool calls and `createOriginPinnedFetch` for hub-side discovery.
+- **Pairs with:** [`@corbits/mcp@0.4.0`](https://github.com/corbitsdev/corbits-mcp), which uses the MCP preset for tool calls and `createOriginPinnedFetch` for hub-side discovery.
 
 ## Reference
 
